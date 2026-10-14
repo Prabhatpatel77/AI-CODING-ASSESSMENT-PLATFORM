@@ -20,6 +20,7 @@ export default function AppShell() {
 
   // Live health state from /api/health
   const [apiStatus, setApiStatus] = useState('healthy');
+  const [dbStatus, setDbStatus] = useState('unconfigured');
   const [uptime, setUptime] = useState(null);
 
   useEffect(() => {
@@ -27,9 +28,13 @@ export default function AppShell() {
       .then((res) => res.json())
       .then((data) => {
         setApiStatus(data.status || 'healthy');
+        setDbStatus(data.database?.status || 'unconfigured');
         setUptime(data.uptime);
       })
-      .catch(() => setApiStatus('offline'));
+      .catch(() => {
+        setApiStatus('offline');
+        setDbStatus('error');
+      });
   }, []);
 
   // Close mobile drawer on route change
@@ -131,6 +136,8 @@ export default function AppShell() {
             />
             <span style={{ fontFamily: 'monospace' }}>API {apiStatus.toUpperCase()}</span>
           </Box>
+          <span style={{ color: tokens.border.strong }}>·</span>
+          <span>DB: <strong style={{ color: dbStatus === 'connected' ? tokens.status.success.main : tokens.text.secondary, textTransform: 'capitalize' }}>{dbStatus}</strong></span>
           <span style={{ color: tokens.border.strong }}>·</span>
           <span>Route: <strong style={{ color: tokens.text.primary, fontFamily: 'monospace' }}>{location.pathname}</strong></span>
           <span style={{ color: tokens.border.strong }}>·</span>

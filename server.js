@@ -1,6 +1,7 @@
 /**
  * Node.js + Express backend entry point
  * Bridges Express API with Vite in development and static assets in production.
+ * Initializes MongoDB connectivity via dedicated Mongoose configuration module.
  */
 
 import express from 'express';
@@ -9,12 +10,16 @@ import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
 import healthRouter from './server/routes/health.js';
 import { notFoundHandler, globalErrorHandler } from './server/middleware/errorHandler.js';
+import { connectDatabase, disconnectDatabase } from './server/config/database.js';
 
 dotenv.config();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Initialize database connectivity (non-blocking in development/prototype mode)
+await connectDatabase({ exitOnFailure: false });
 
 // Body parsing middleware
 app.use(express.json());
@@ -53,6 +58,19 @@ if (process.env.NODE_ENV === 'production') {
   app.use(vite.middlewares);
 }
 
-app.listen(PORT, '0.0.0.0', () => {
+const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`[Server] Backend running at http://0.0.0.0:${PORT}`);
 });
+
+// Graceful shutdown listeners
+const handleShutdown = async (signal) => {
+  console.log(`\n[Server] Received ${signal}. Starting graceful shutdown...`);
+  server.close(async () => {
+    await disconnectDatabase();
+    console.log('[Server] Process terminated cleanly.');
+    process.exit(0);
+  });
+};
+
+process.on('SIGINT', () => handleShutdown('SIGINT'));
+process.on('SIGTERM', () => handleShutdown('SIGTERM'));
