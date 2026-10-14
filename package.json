@@ -9,7 +9,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist",
-    "lint": "vite build"
+    "lint": "vite build",
+    "test": "node server/tests/auth.test.js"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",
@@ -19,8 +20,10 @@
     "@mui/material": "^9.5.0",
     "@tailwindcss/vite": "^4.3.3",
     "@vitejs/plugin-react": "^6.1.1",
+    "bcryptjs": "^3.0.3",
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
+    "jsonwebtoken": "^9.0.3",
     "lucide-react": "^0.546.0",
     "mongoose": "^9.11.2",
     "motion": "^12.23.24",
