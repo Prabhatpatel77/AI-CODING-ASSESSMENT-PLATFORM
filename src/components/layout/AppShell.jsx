@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Drawer } from '@mui/material';
 import { Outlet, useLocation } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext.jsx';
 import { useAppTheme } from '../../theme/ThemeContext.jsx';
 import TopNav from './TopNav.jsx';
 import Sidebar from './Sidebar.jsx';
 
 export default function AppShell() {
+  const { user, isAuthenticated } = useAuth();
   const { tokens, mode } = useAppTheme();
   const location = useLocation();
 
@@ -15,8 +17,8 @@ export default function AppShell() {
   // Mobile sidebar drawer state
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  // Simulated role state ('student' | 'faculty' | 'admin')
-  const [currentRole, setCurrentRole] = useState('student');
+  // Active user role
+  const userRole = user?.role || (isAuthenticated ? 'student' : 'guest');
 
   // Live health state from /api/health
   const [apiStatus, setApiStatus] = useState('healthy');
@@ -56,8 +58,6 @@ export default function AppShell() {
       {/* Top Navigation */}
       <TopNav
         onToggleMobileSidebar={() => setMobileOpen(!mobileOpen)}
-        currentRole={currentRole}
-        onRoleChange={setCurrentRole}
         apiStatus={apiStatus}
       />
 
@@ -68,7 +68,6 @@ export default function AppShell() {
           <Sidebar
             collapsed={collapsed}
             onToggleCollapse={() => setCollapsed(!collapsed)}
-            userRole={currentRole}
           />
         </Box>
 
@@ -90,7 +89,6 @@ export default function AppShell() {
           <Sidebar
             collapsed={false}
             onToggleCollapse={() => setMobileOpen(false)}
-            userRole={currentRole}
           />
         </Drawer>
 
@@ -104,7 +102,7 @@ export default function AppShell() {
             height: 'calc(100vh - 56px - 28px)',
           }}
         >
-          <Outlet context={{ currentRole, apiStatus }} />
+          <Outlet context={{ user, userRole, apiStatus }} />
         </Box>
       </Box>
 
@@ -141,7 +139,7 @@ export default function AppShell() {
           <span style={{ color: tokens.border.strong }}>·</span>
           <span>Route: <strong style={{ color: tokens.text.primary, fontFamily: 'monospace' }}>{location.pathname}</strong></span>
           <span style={{ color: tokens.border.strong }}>·</span>
-          <span>Role: <strong style={{ color: tokens.primary.main, textTransform: 'capitalize' }}>{currentRole}</strong></span>
+          <span>Role: <strong style={{ color: tokens.primary.main, textTransform: 'capitalize' }}>{userRole}</strong></span>
         </Box>
 
         <Box sx={{ display: { xs: 'none', sm: 'flex' }, alignItems: 'center', gap: 2 }}>

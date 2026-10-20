@@ -18,8 +18,10 @@ import ContinueLearningCard from '../dashboard/ContinueLearningCard.jsx';
 import RecommendedProblemsCard from '../dashboard/RecommendedProblemsCard.jsx';
 import UpcomingAssessmentsCard from '../dashboard/UpcomingAssessmentsCard.jsx';
 import RecentActivityCard from '../dashboard/RecentActivityCard.jsx';
+import { useAuth } from '../../context/AuthContext.jsx';
 
 export default function StudentDashboard() {
+  const { user } = useAuth();
   const { tokens } = useAppTheme();
 
   // Mode: 'empty' (Default: true empty state) | 'demo' (Preview populated state)
@@ -29,7 +31,11 @@ export default function StudentDashboard() {
   const [loading, setLoading] = useState(false);
   const [hasError, setHasError] = useState(false);
 
-  const activeData = dataMode === 'demo' ? DEMO_PREVIEW_DASHBOARD_DATA : EMPTY_DASHBOARD_DATA;
+  const baseData = dataMode === 'demo' ? DEMO_PREVIEW_DASHBOARD_DATA : EMPTY_DASHBOARD_DATA;
+  const activeData = {
+    ...baseData,
+    studentName: user?.name || baseData.studentName,
+  };
 
   const handleSimulateReload = () => {
     setLoading(true);
