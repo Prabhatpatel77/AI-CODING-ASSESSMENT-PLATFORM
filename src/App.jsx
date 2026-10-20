@@ -7,6 +7,8 @@ import StudentDashboard from './components/pages/StudentDashboard.jsx';
 import RoutePlaceholder from './components/pages/RoutePlaceholder.jsx';
 import LoginPage from './components/pages/LoginPage.jsx';
 import RegisterPage from './components/pages/RegisterPage.jsx';
+import PracticePage from './components/pages/PracticePage.jsx';
+import CodingWorkspacePage from './components/pages/CodingWorkspacePage.jsx';
 import ProtectedRoute from './components/auth/ProtectedRoute.jsx';
 
 export default function App() {
@@ -29,18 +31,16 @@ export default function App() {
                 path="practice"
                 element={
                   <ProtectedRoute>
-                    <RoutePlaceholder
-                      title="Practice Library"
-                      subtitle="Algorithmic problem catalog with Monaco IDE, test fixtures, and language runtimes."
-                      category="Student Area"
-                      breadcrumbs={[{ label: 'Practice', path: '/practice' }]}
-                      plannedCapabilities={[
-                        'Algorithmic problem catalog with difficulty (Easy, Medium, Hard) and topic filters',
-                        'Monaco code workspace with multi-language syntax highlighting (JavaScript, Python)',
-                        'Integrated test runner executing visible and hidden test fixtures',
-                        'Submission history and pass rate indicators per challenge',
-                      ]}
-                    />
+                    <PracticePage />
+                  </ProtectedRoute>
+                }
+              />
+
+              <Route
+                path="practice/:slug"
+                element={
+                  <ProtectedRoute>
+                    <CodingWorkspacePage />
                   </ProtectedRoute>
                 }
               />

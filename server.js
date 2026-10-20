@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
 import healthRouter from './server/routes/health.js';
 import authRouter from './server/routes/auth.js';
+import problemsRouter from './server/routes/problems.js';
 import { notFoundHandler, globalErrorHandler } from './server/middleware/errorHandler.js';
 import { connectDatabase, disconnectDatabase } from './server/config/database.js';
 
@@ -37,6 +38,9 @@ app.use('/api', (req, res, next) => {
 
 // Authentication endpoints
 app.use('/api/auth', authRouter);
+
+// Problem endpoints
+app.use('/api/problems', problemsRouter);
 
 // Health-check endpoint
 app.use('/api/health', healthRouter);
