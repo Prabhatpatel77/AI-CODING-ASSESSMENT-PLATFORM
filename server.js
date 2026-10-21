@@ -11,6 +11,7 @@ import dotenv from 'dotenv';
 import healthRouter from './server/routes/health.js';
 import authRouter from './server/routes/auth.js';
 import problemsRouter from './server/routes/problems.js';
+import executionRouter from './server/routes/execution.js';
 import { notFoundHandler, globalErrorHandler } from './server/middleware/errorHandler.js';
 import { connectDatabase, disconnectDatabase } from './server/config/database.js';
 
@@ -41,6 +42,9 @@ app.use('/api/auth', authRouter);
 
 // Problem endpoints
 app.use('/api/problems', problemsRouter);
+
+// Code execution sandbox endpoints
+app.use('/api/execution', executionRouter);
 
 // Health-check endpoint
 app.use('/api/health', healthRouter);

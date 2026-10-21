@@ -10,8 +10,9 @@
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "vite build",
-    "test": "node server/tests/auth.test.js && node server/tests/problems.test.js",
-    "test:problems": "node server/tests/problems.test.js"
+    "test": "node server/tests/auth.test.js && node server/tests/problems.test.js && node server/tests/execution.test.js",
+    "test:problems": "node server/tests/problems.test.js",
+    "test:execution": "node server/tests/execution.test.js"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",

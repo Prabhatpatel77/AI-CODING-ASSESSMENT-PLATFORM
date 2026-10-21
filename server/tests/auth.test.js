@@ -15,6 +15,10 @@ async function runTests() {
 
   resetMemoryUsers();
 
+  const ts = Date.now();
+  const studentEmail = `sarah.connor.${ts}@example.com`;
+  const facultyEmail = `alan.turing.${ts}@university.edu`;
+
   let passed = 0;
   let failed = 0;
 
@@ -37,7 +41,7 @@ async function runTests() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         name: 'Sarah Connor',
-        email: 'sarah.connor@example.com',
+        email: studentEmail,
         password: 'Password123!',
         role: 'student',
       }),
@@ -72,7 +76,7 @@ async function runTests() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         name: 'John Doe',
-        email: 'john.doe@example.com',
+        email: `john.doe.${ts}@example.com`,
         password: 'short',
       }),
     });
@@ -86,7 +90,7 @@ async function runTests() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         name: 'Malicious Attacker',
-        email: 'attacker@example.com',
+        email: `attacker.${ts}@example.com`,
         password: 'Password123!',
         role: 'admin',
       }),
@@ -110,7 +114,7 @@ async function runTests() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         name: 'Sarah Duplicate',
-        email: 'SARAH.CONNOR@example.com', // test case-insensitivity
+        email: studentEmail.toUpperCase(), // test case-insensitivity
         password: 'Password123!',
       }),
     });
@@ -124,7 +128,7 @@ async function runTests() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         name: 'Prof. Turing',
-        email: 'alan.turing@university.edu',
+        email: facultyEmail,
         password: 'SecurePassword123',
         role: 'faculty',
       }),
@@ -141,14 +145,14 @@ async function runTests() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        email: 'sarah.connor@example.com',
+        email: studentEmail,
         password: 'Password123!',
       }),
     });
     const loginData = await loginRes.json();
     assert(loginRes.status === 200, 'Login with valid credentials returns HTTP 200');
     assert(Boolean(loginData.token), 'Login returns signed JWT token');
-    assert(loginData.user?.email === 'sarah.connor@example.com', 'Login returns user profile');
+    assert(loginData.user?.email === studentEmail, 'Login returns user profile');
     assert(loginData.user?.password === undefined, 'CRITICAL: Password hash is NOT returned in login response');
 
     // -------------------------------------------------------------------------
@@ -158,7 +162,7 @@ async function runTests() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        email: 'sarah.connor@example.com',
+        email: studentEmail,
         password: 'WrongPassword456',
       }),
     });
@@ -171,7 +175,7 @@ async function runTests() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        email: 'does.not.exist@example.com',
+        email: `does.not.exist.${ts}@example.com`,
         password: 'Password123!',
       }),
     });
@@ -185,7 +189,7 @@ async function runTests() {
     });
     const meData = await meRes.json();
     assert(meRes.status === 200, 'GET /api/auth/me returns HTTP 200 with valid token');
-    assert(meData.user?.email === 'sarah.connor@example.com', 'GET /api/auth/me returns correct user data');
+    assert(meData.user?.email === studentEmail, 'GET /api/auth/me returns correct user data');
     assert(meData.user?.password === undefined, 'CRITICAL: Password hash is NOT returned on /api/auth/me');
 
     // -------------------------------------------------------------------------
