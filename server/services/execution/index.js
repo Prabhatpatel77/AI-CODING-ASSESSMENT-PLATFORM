@@ -7,6 +7,7 @@
 import { Judge0Adapter } from './Judge0Adapter.js';
 import { PistonAdapter } from './PistonAdapter.js';
 import { UnconfiguredAdapter } from './UnconfiguredAdapter.js';
+import { executeProblemTestSuite } from './problemRunner.js';
 import {
   SUPPORTED_LANGUAGES,
   DEFAULT_RESOURCE_LIMITS,
@@ -32,11 +33,14 @@ export function getExecutionProvider() {
     activeAdapter = new Judge0Adapter({
       apiUrl: judge0Url,
       apiKey: process.env.JUDGE0_API_KEY,
+      apiHost: process.env.JUDGE0_API_HOST,
+      apiUser: process.env.JUDGE0_API_USER,
     });
     console.log(`[Execution Service] Initialized Judge0 adapter at ${judge0Url}`);
   } else if ((providerType === 'piston' || !providerType) && pistonUrl) {
     activeAdapter = new PistonAdapter({
       apiUrl: pistonUrl,
+      apiKey: process.env.PISTON_API_KEY,
     });
     console.log(`[Execution Service] Initialized Piston adapter at ${pistonUrl}`);
   } else {
@@ -91,6 +95,9 @@ export function getExecutionServiceConfig() {
     provider: providerStatus.provider,
     configured: providerStatus.configured,
     ready: providerStatus.ready,
+    endpoint: providerStatus.endpoint || null,
+    authType: providerStatus.authType || 'none',
+    pollingSupported: Boolean(providerStatus.pollingSupported),
     supportedLanguages: Object.values(SUPPORTED_LANGUAGES).map((l) => ({
       id: l.id,
       displayName: l.displayName,
@@ -108,3 +115,5 @@ export function getExecutionServiceConfig() {
 export function resetExecutionProvider(customAdapter = null) {
   activeAdapter = customAdapter;
 }
+
+export { executeProblemTestSuite };

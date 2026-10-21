@@ -15,6 +15,7 @@ import {
 import { authenticate, requireRole } from '../middleware/auth.js';
 import { verifyToken } from '../services/jwtService.js';
 import { findUserById } from '../services/userRepository.js';
+import { executeProblemTestSuite } from '../services/execution/index.js';
 
 const router = express.Router();
 
@@ -365,6 +366,108 @@ router.delete('/:idOrSlug', authenticate, requireRole('faculty', 'admin'), async
       message: 'Problem deleted successfully.',
     });
   } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/problems/:idOrSlug/run
+ * Runs student code against visible test cases in the isolated execution sandbox.
+ * Never executes on the local host.
+ */
+router.post('/:idOrSlug/run', optionalAuth, async (req, res, next) => {
+  try {
+    const { idOrSlug } = req.params;
+    const { code, language = 'javascript', resourceLimits } = req.body;
+
+    if (!code || typeof code !== 'string' || !code.trim()) {
+      return res.status(400).json({
+        status: 'error',
+        statusCode: 400,
+        message: 'Source code string is required and cannot be empty.',
+      });
+    }
+
+    if (Buffer.byteLength(code, 'utf8') > 65536) {
+      return res.status(400).json({
+        status: 'error',
+        statusCode: 400,
+        message: 'Source code exceeds maximum permitted size of 64 KB.',
+      });
+    }
+
+    const result = await executeProblemTestSuite({
+      problemSlug: idOrSlug,
+      code,
+      language,
+      isSubmit: false,
+      resourceLimits,
+    });
+
+    res.status(200).json({
+      status: 'success',
+      execution: result,
+    });
+  } catch (err) {
+    if (err.statusCode === 404) {
+      return res.status(404).json({
+        status: 'error',
+        statusCode: 404,
+        message: err.message,
+      });
+    }
+    next(err);
+  }
+});
+
+/**
+ * POST /api/problems/:idOrSlug/submit
+ * Evaluates student code against the complete test suite (both visible and hidden).
+ * CRITICAL SECURITY INVARIANT:
+ * Hidden test case inputs and expected outputs are NEVER returned in the client response.
+ * Unexecuted code is NEVER marked as successful.
+ */
+router.post('/:idOrSlug/submit', optionalAuth, async (req, res, next) => {
+  try {
+    const { idOrSlug } = req.params;
+    const { code, language = 'javascript', resourceLimits } = req.body;
+
+    if (!code || typeof code !== 'string' || !code.trim()) {
+      return res.status(400).json({
+        status: 'error',
+        statusCode: 400,
+        message: 'Source code string is required and cannot be empty.',
+      });
+    }
+
+    if (Buffer.byteLength(code, 'utf8') > 65536) {
+      return res.status(400).json({
+        status: 'error',
+        statusCode: 400,
+        message: 'Source code exceeds maximum permitted size of 64 KB.',
+      });
+    }
+
+    const evaluation = await executeProblemTestSuite({
+      problemSlug: idOrSlug,
+      code,
+      language,
+      isSubmit: true,
+      resourceLimits,
+    });
+
+    res.status(200).json({
+      status: 'success',
+      evaluation,
+    });
+  } catch (err) {
+    if (err.statusCode === 404) {
+      return res.status(404).json({
+        status: 'error',
+        statusCode: 404,
+        message: err.message,
+      });
+    }
     next(err);
   }
 });

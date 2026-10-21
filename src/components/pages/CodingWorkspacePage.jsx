@@ -192,18 +192,84 @@ export default function CodingWorkspacePage() {
     setResetDialogOpen(false);
   };
 
-  // Handle Run action (honest notice without fake output)
-  const handleRunTests = () => {
+  // Handle Run action (executes against visible test cases via isolated sandbox)
+  const handleRunTests = async () => {
     setLastAction('run');
-    setResultsTab(0); // Console output tab
+    setResultsTab(0); // Console / visible tests output tab
     setResultsOpen(true);
+    setIsExecuting(true);
+
+    try {
+      const endpoint = problem ? `/api/problems/${problem.slug}/run` : '/api/execution/run';
+      const res = await authFetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code,
+          language: selectedLanguage,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setExecutionResult(data.execution);
+      } else {
+        setExecutionResult({
+          status: 'INTERNAL_ERROR',
+          error: { message: data.message || 'Execution request failed' },
+          provider: 'unknown',
+          durationMs: 0,
+        });
+      }
+    } catch (err) {
+      setExecutionResult({
+        status: 'INTERNAL_ERROR',
+        error: { message: err.message },
+        provider: 'unknown',
+        durationMs: 0,
+      });
+    } finally {
+      setIsExecuting(false);
+    }
   };
 
-  // Handle Submit action (honest notice without fake output)
-  const handleDoneSubmit = () => {
+  // Handle Submit action (evaluates against complete test suite via isolated sandbox)
+  const handleDoneSubmit = async () => {
     setLastAction('submit');
     setResultsTab(2); // Submission evaluation tab
     setResultsOpen(true);
+    setIsExecuting(true);
+
+    try {
+      const endpoint = problem ? `/api/problems/${problem.slug}/submit` : '/api/execution/run';
+      const res = await authFetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code,
+          language: selectedLanguage,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setExecutionResult(data.evaluation || data.execution);
+      } else {
+        setExecutionResult({
+          status: 'INTERNAL_ERROR',
+          error: { message: data.message || 'Submission request failed' },
+          provider: 'unknown',
+          durationMs: 0,
+        });
+      }
+    } catch (err) {
+      setExecutionResult({
+        status: 'INTERNAL_ERROR',
+        error: { message: err.message },
+        provider: 'unknown',
+        durationMs: 0,
+      });
+    } finally {
+      setIsExecuting(false);
+    }
   };
 
   // Desktop splitter drag handlers

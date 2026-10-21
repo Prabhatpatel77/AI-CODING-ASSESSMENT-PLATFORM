@@ -17,6 +17,8 @@ import {
   Play,
   Send,
   CheckCircle2,
+  XCircle,
+  Clock,
   Lock,
   Layers,
   X,
@@ -62,6 +64,12 @@ export default function ResultsPanel({
     }
   };
 
+  // Find individual test result by index if testResults exists
+  const getTestResult = (index) => {
+    if (!executionResult?.testResults) return null;
+    return executionResult.testResults.find((r) => r.testCaseNumber === index + 1) || executionResult.testResults[index] || null;
+  };
+
   return (
     <Box
       sx={{
@@ -70,8 +78,8 @@ export default function ResultsPanel({
         display: 'flex',
         flexDirection: 'column',
         transition: 'height 0.2s ease',
-        height: open ? 260 : 40,
-        minHeight: open ? 220 : 40,
+        height: open ? 290 : 40,
+        minHeight: open ? 240 : 40,
         overflow: 'hidden',
       }}
     >
@@ -146,7 +154,7 @@ export default function ResultsPanel({
                       <strong>Remote Judge Unconfigured:</strong> {executionResult.error?.message}
                       {executionResult.error?.configurationGuide && (
                         <Box sx={{ mt: 1, fontFamily: 'monospace', fontSize: '0.6875rem' }}>
-                          <div>Required Environment Variables:</div>
+                          <div>Required Server Environment Variables:</div>
                           {executionResult.error.configurationGuide.requiredEnvVars.map((v, i) => (
                             <div key={i} style={{ color: tokens.text.secondary }}>{v}</div>
                           ))}
@@ -159,7 +167,7 @@ export default function ResultsPanel({
                     </Alert>
                   ) : (
                     <Alert severity="error" sx={{ fontSize: '0.75rem' }}>
-                      Execution terminated with status: {executionResult.status} ({executionResult.error?.message || 'Process error'})
+                      Execution terminated with status: {executionResult.status} ({executionResult.error?.message || 'Check stdout/stderr below'})
                     </Alert>
                   )}
 
@@ -175,11 +183,11 @@ export default function ResultsPanel({
                     }}
                   >
                     <div style={{ color: tokens.primary.main, marginBottom: 4 }}>
-                      [EXECUTION RECORD] ID: {executionResult.executionId}
+                      [EXECUTION RECORD] ID: {executionResult.executionId || 'local-dispatch'}
                     </div>
-                    <div>Provider: {executionResult.provider}</div>
-                    <div>Runtime: {executionResult.language}</div>
-                    <div>Duration: {executionResult.durationMs}ms</div>
+                    <div>Provider: {executionResult.provider || 'unknown'}</div>
+                    <div>Runtime: {executionResult.language || selectedLanguage}</div>
+                    <div>Duration: {executionResult.durationMs || 0}ms</div>
                     {executionResult.stdout && (
                       <div style={{ marginTop: 8 }}>
                         <div style={{ color: tokens.status.success.main }}>STDOUT:</div>
@@ -190,6 +198,12 @@ export default function ResultsPanel({
                       <div style={{ marginTop: 8 }}>
                         <div style={{ color: tokens.status.error.main }}>STDERR:</div>
                         <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{executionResult.stderr}</pre>
+                      </div>
+                    )}
+                    {executionResult.compileOutput && (
+                      <div style={{ marginTop: 8 }}>
+                        <div style={{ color: tokens.status.warning.main }}>COMPILATION LOG:</div>
+                        <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{executionResult.compileOutput}</pre>
                       </div>
                     )}
                   </Box>
@@ -214,44 +228,131 @@ export default function ResultsPanel({
                 </span>
               </Box>
 
-              {(problem?.visibleTestCases || []).map((tc, idx) => (
-                <Box
-                  key={tc.id || idx}
-                  sx={{
-                    p: 1.5,
-                    borderRadius: 1,
-                    bgcolor: tokens.background.paper,
-                    border: `1px solid ${tokens.border.subtle}`,
-                    fontSize: '0.75rem',
-                    fontFamily: 'monospace',
-                  }}
-                >
-                  <Typography variant="caption" fontWeight={700} color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
-                    Test Case {idx + 1}
-                  </Typography>
-                  <div><strong>Input:</strong> {tc.inputStr || JSON.stringify(tc.input)}</div>
-                  <div><strong>Expected Output:</strong> {JSON.stringify(tc.expectedOutput)}</div>
-                  {tc.explanation && (
-                    <div style={{ color: tokens.text.secondary, marginTop: 2 }}>
-                      {tc.explanation}
-                    </div>
-                  )}
-                </Box>
-              ))}
+              {(problem?.visibleTestCases || []).map((tc, idx) => {
+                const tr = getTestResult(idx);
+                return (
+                  <Box
+                    key={tc.id || idx}
+                    sx={{
+                      p: 1.5,
+                      borderRadius: 1,
+                      bgcolor: tokens.background.paper,
+                      border: `1px solid ${tr ? (tr.passed ? tokens.status.success.border : tokens.status.error.border) : tokens.border.subtle}`,
+                      fontSize: '0.75rem',
+                      fontFamily: 'monospace',
+                    }}
+                  >
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
+                      <Typography variant="caption" fontWeight={700} color="text.secondary">
+                        Test Case {idx + 1}
+                      </Typography>
+                      {tr && (
+                        <StatusBadge
+                          variant={tr.passed ? 'success' : 'error'}
+                          size="small"
+                          label={tr.passed ? 'PASSED' : tr.status || 'FAILED'}
+                        />
+                      )}
+                    </Box>
+                    <div><strong>Input:</strong> {tc.inputStr || JSON.stringify(tc.input)}</div>
+                    <div><strong>Expected Output:</strong> {JSON.stringify(tc.expectedOutput)}</div>
+                    {tr?.actualOutput !== undefined && (
+                      <div style={{ color: tr.passed ? tokens.status.success.main : tokens.status.error.main, marginTop: 4 }}>
+                        <strong>Actual Output:</strong> {JSON.stringify(tr.actualOutput)}
+                      </div>
+                    )}
+                    {tc.explanation && (
+                      <div style={{ color: tokens.text.secondary, marginTop: 2 }}>
+                        {tc.explanation}
+                      </div>
+                    )}
+                  </Box>
+                );
+              })}
             </Stack>
           )}
 
           {activeTab === 2 && (
             /* Submission Evaluation Tab */
             <Stack spacing={1.5}>
-              {lastAction === 'submit' ? (
-                <Alert severity="warning" sx={{ fontSize: '0.75rem' }}>
-                  Evaluation runner is pending backend integration. No fake score or mock execution result has been created.
-                  Your solution for <strong>{problem?.title}</strong> is drafted and preserved.
-                </Alert>
+              {isExecuting ? (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, py: 2 }}>
+                  <CircularProgress size={18} sx={{ color: tokens.primary.main }} />
+                  <Typography variant="body2" color="text.secondary">
+                    Evaluating solution across all visible and hidden test fixtures...
+                  </Typography>
+                </Box>
+              ) : executionResult && lastAction === 'submit' ? (
+                <>
+                  {executionResult.status === 'UNCONFIGURED' ? (
+                    <Alert severity="warning" sx={{ fontSize: '0.75rem' }}>
+                      <strong>Isolated Execution Provider Unconfigured:</strong> {executionResult.error?.message}
+                      {executionResult.error?.configurationGuide && (
+                        <Box sx={{ mt: 1, fontFamily: 'monospace', fontSize: '0.6875rem' }}>
+                          <div>Configure in .env on server:</div>
+                          {executionResult.error.configurationGuide.requiredEnvVars.map((v, i) => (
+                            <div key={i} style={{ color: tokens.text.secondary }}>{v}</div>
+                          ))}
+                        </Box>
+                      )}
+                    </Alert>
+                  ) : executionResult.allPassed ? (
+                    <Alert severity="success" sx={{ fontSize: '0.75rem' }}>
+                      <strong>All Tests Passed! (Accepted):</strong> Passed {executionResult.passedTests} / {executionResult.totalTests} total test cases in {executionResult.durationMs}ms.
+                    </Alert>
+                  ) : (
+                    <Alert severity="error" sx={{ fontSize: '0.75rem' }}>
+                      <strong>Submission Status: {executionResult.status}</strong> — Passed {executionResult.passedTests} / {executionResult.totalTests} test cases.
+                    </Alert>
+                  )}
+
+                  {/* Test fixtures breakdown */}
+                  {Array.isArray(executionResult.testResults) && executionResult.testResults.length > 0 && (
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                      {executionResult.testResults.map((tr) => (
+                        <Box
+                          key={tr.testCaseId || tr.testCaseNumber}
+                          sx={{
+                            p: 1.5,
+                            borderRadius: 1,
+                            bgcolor: tokens.background.paper,
+                            border: `1px solid ${tr.passed ? tokens.status.success.border : tokens.status.error.border}`,
+                            fontSize: '0.75rem',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                          }}
+                        >
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            {tr.passed ? (
+                              <CheckCircle2 size={16} color={tokens.status.success.main} />
+                            ) : (
+                              <XCircle size={16} color={tokens.status.error.main} />
+                            )}
+                            <span>
+                              Test Case #{tr.testCaseNumber} {tr.isHidden ? '(Secure Hidden Test Case)' : '(Visible Test Case)'}
+                            </span>
+                          </Box>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                            {tr.durationMs !== undefined && (
+                              <span style={{ color: tokens.text.secondary, fontSize: '0.6875rem' }}>
+                                {tr.durationMs}ms
+                              </span>
+                            )}
+                            <StatusBadge
+                              variant={tr.passed ? 'success' : 'error'}
+                              size="small"
+                              label={tr.passed ? 'PASSED' : tr.status || 'FAILED'}
+                            />
+                          </Box>
+                        </Box>
+                      ))}
+                    </Box>
+                  )}
+                </>
               ) : (
                 <Typography variant="caption" color="text.secondary">
-                  Click "Submit Solution" to trigger proctored evaluation across all visible and hidden test fixtures once the grader is connected.
+                  Click "Submit Solution" to trigger proctored evaluation across all visible and hidden test fixtures.
                 </Typography>
               )}
 
@@ -265,13 +366,13 @@ export default function ResultsPanel({
                 }}
               >
                 <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
-                  Evaluation Suite Details
+                  Evaluation Suite Specification
                 </Typography>
                 <Stack spacing={0.5} sx={{ color: tokens.text.secondary }}>
                   <div>· Visible Test Fixtures: {(problem?.visibleTestCases || []).length} cases</div>
                   <div>· Hidden Evaluation Suite: {problem?.hiddenTestCasesCount || 0} cases</div>
                   <div>· Target Runtime: {selectedLanguage}</div>
-                  <div>· Memory &amp; Execution Limits: 2000ms / 128MB</div>
+                  <div>· Sandboxing: Isolated container with no host access or network egress</div>
                 </Stack>
               </Box>
             </Stack>

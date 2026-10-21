@@ -216,6 +216,208 @@ async function runTests() {
     // Restore unconfigured adapter
     resetExecutionProvider(null);
 
+    // -------------------------------------------------------------------------
+    // TEST 9: Judge0Adapter Authentication Header Building
+    // -------------------------------------------------------------------------
+    const { Judge0Adapter } = await import('../services/execution/Judge0Adapter.js');
+
+    // RapidAPI configuration
+    const rapidAdapter = new Judge0Adapter({
+      apiUrl: 'https://judge0-ce.p.rapidapi.com',
+      apiKey: 'rapid-secret-key-12345',
+    });
+    const rapidHeaders = rapidAdapter.getAuthHeaders();
+    assert(rapidHeaders['X-RapidAPI-Key'] === 'rapid-secret-key-12345', 'RapidAPI adapter sets X-RapidAPI-Key');
+    assert(rapidHeaders['X-RapidAPI-Host'] === 'judge0-ce.p.rapidapi.com', 'RapidAPI adapter sets X-RapidAPI-Host');
+    assert(rapidAdapter.getStatus().authType === 'rapidapi', 'RapidAPI adapter identifies authType as rapidapi');
+    assert(rapidAdapter.getStatus().apiKey === undefined, 'CRITICAL: getStatus() NEVER leaks apiKey');
+
+    // Self-hosted token configuration
+    const selfHostedAdapter = new Judge0Adapter({
+      apiUrl: 'http://judge0.internal:2358',
+      apiKey: 'custom-judge-token-99',
+      apiUser: 'judge_admin',
+    });
+    const selfHeaders = selfHostedAdapter.getAuthHeaders();
+    assert(selfHeaders['X-Auth-Token'] === 'custom-judge-token-99', 'Self-hosted adapter sets X-Auth-Token');
+    assert(selfHeaders['X-Auth-User'] === 'judge_admin', 'Self-hosted adapter sets X-Auth-User');
+    assert(selfHostedAdapter.getStatus().authType === 'token', 'Self-hosted adapter identifies authType as token');
+
+    // -------------------------------------------------------------------------
+    // TEST 10: Judge0Adapter Polling Mechanism Simulation
+    // -------------------------------------------------------------------------
+    // Create an adapter that simulates Judge0's async token queue + polling completion
+    let pollCount = 0;
+    const pollingMockAdapter = new Judge0Adapter({
+      apiUrl: 'http://mock-judge0.test',
+      initialPollIntervalMs: 50,
+      maxPollIntervalMs: 100,
+    });
+
+    // Mock fetchWithRetry to simulate:
+    // 1st call (POST /submissions): returns token with status In Queue (1)
+    // 2nd call (GET /submissions/token-123): returns status Processing (2)
+    // 3rd call (GET /submissions/token-123): returns status Accepted (3) with stdout base64
+    pollingMockAdapter.fetchWithRetry = async (url, options) => {
+      if (options.method === 'POST') {
+        return {
+          ok: true,
+          status: 201,
+          json: async () => ({ token: 'mock-token-xyz', status_id: 1 }),
+        };
+      }
+      pollCount++;
+      if (pollCount === 1) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ token: 'mock-token-xyz', status_id: 2 }), // Processing
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          token: 'mock-token-xyz',
+          status_id: 3, // Accepted
+          stdout: Buffer.from('42\n').toString('base64'),
+          stderr: null,
+          time: '0.045',
+          memory: 12500,
+          exit_code: 0,
+        }),
+      };
+    };
+
+    const polledResult = await pollingMockAdapter.execute({
+      executionId: 'exec_test_poll_1',
+      code: 'console.log(42);',
+      language: 'javascript',
+      resourceLimits: { wallTimeLimitSeconds: 5, cpuTimeLimitSeconds: 2, maxOutputLengthBytes: 1024 },
+    });
+
+    assert(pollCount >= 2, 'Polling loop queried status until completion');
+    assert(polledResult.status === 'SUCCESS', 'Polling completed with status SUCCESS');
+    assert(polledResult.stdout.trim() === '42', 'Normalized Base64 stdout correctly decoded');
+    assert(polledResult.durationMs === 45, 'Time scaled from seconds to durationMs (45ms)');
+    assert(polledResult.memoryUsedKb === 12500, 'Preserved memoryUsedKb');
+
+    // -------------------------------------------------------------------------
+    // TEST 11: Judge0Adapter Authentication Failure Handling (HTTP 401/403)
+    // -------------------------------------------------------------------------
+    const authFailAdapter = new Judge0Adapter({
+      apiUrl: 'http://mock-judge0.test',
+      apiKey: 'invalid-key',
+    });
+    authFailAdapter.fetchWithRetry = async () => {
+      const authErr = new Error('Judge0 authentication failed with HTTP 401.');
+      authErr.isAuthError = true;
+      throw authErr;
+    };
+
+    const authFailResult = await authFailAdapter.execute({
+      executionId: 'exec_test_auth_fail',
+      code: 'print("test")',
+      language: 'python',
+      resourceLimits: { wallTimeLimitSeconds: 5, cpuTimeLimitSeconds: 2, maxOutputLengthBytes: 1024 },
+    });
+
+    assert(authFailResult.status === 'INTERNAL_ERROR', 'Authentication error returns INTERNAL_ERROR status');
+    assert(authFailResult.error?.code === 'PROVIDER_AUTH_FAILED', 'Structured error code PROVIDER_AUTH_FAILED');
+    assert(authFailResult.error?.message.includes('JUDGE0_API_KEY'), 'Diagnostic mentions checking JUDGE0_API_KEY');
+    assert(!JSON.stringify(authFailResult).includes('invalid-key'), 'CRITICAL: Response does NOT leak the API key');
+
+    // -------------------------------------------------------------------------
+    // TEST 12: Judge0Adapter Connection Failure Handling
+    // -------------------------------------------------------------------------
+    const connFailAdapter = new Judge0Adapter({
+      apiUrl: 'http://invalid-unreachable-host:9999',
+    });
+    connFailAdapter.fetchWithRetry = async () => {
+      throw new Error('fetch failed: connect ECONNREFUSED');
+    };
+
+    const connFailResult = await connFailAdapter.execute({
+      executionId: 'exec_test_conn_fail',
+      code: 'console.log("hello")',
+      language: 'javascript',
+      resourceLimits: { wallTimeLimitSeconds: 5, cpuTimeLimitSeconds: 2, maxOutputLengthBytes: 1024 },
+    });
+
+    assert(connFailResult.status === 'INTERNAL_ERROR', 'Connection failure returns INTERNAL_ERROR status');
+    assert(connFailResult.error?.code === 'PROVIDER_CONNECTION_FAILED', 'Structured code PROVIDER_CONNECTION_FAILED');
+
+    // -------------------------------------------------------------------------
+    // TEST 13: POST /api/problems/:slug/run endpoint
+    // -------------------------------------------------------------------------
+    const problemRunRes = await fetch('http://localhost:3000/api/problems/two-sum/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        code: 'function twoSum(nums, target) { return [0, 1]; }',
+        language: 'javascript',
+      }),
+    });
+    const problemRunData = await problemRunRes.json();
+    assert(problemRunRes.status === 200, 'POST /api/problems/:slug/run returns HTTP 200');
+    assert(problemRunData.status === 'success', 'Response status is success');
+    assert(problemRunData.execution?.problemSlug === 'two-sum', 'Execution identifies problemSlug');
+
+    // -------------------------------------------------------------------------
+    // TEST 14: POST /api/problems/:slug/submit evaluates and protects hidden tests
+    // -------------------------------------------------------------------------
+    const submitRes = await fetch('http://localhost:3000/api/problems/two-sum/submit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        code: 'function twoSum(nums, target) { return [0, 1]; }',
+        language: 'javascript',
+      }),
+    });
+    const submitData = await submitRes.json();
+    assert(submitRes.status === 200, 'POST /api/problems/:slug/submit returns HTTP 200');
+    assert(submitData.status === 'success', 'Submission evaluation status is success');
+    assert(submitData.evaluation?.isSubmit === true, 'Submission evaluation flagged as isSubmit');
+    assert(submitData.evaluation?.hiddenTestsTotal > 0, 'Identifies hidden test cases count');
+
+    // CRITICAL SECURITY INVARIANT:
+    // Hidden test cases must never expose secret input or expectedOutput in the response!
+    const stringifiedEvaluation = JSON.stringify(submitData.evaluation);
+    assert(
+      !stringifiedEvaluation.includes('tc_hidden_3_secret_leak'),
+      'CRITICAL: Secret hidden test cases do not leak unredacted data'
+    );
+    assert(
+      submitData.evaluation?.status !== 'SUCCESS',
+      'CRITICAL: Unexecuted or unverified submission is NEVER marked as SUCCESS'
+    );
+
+    // -------------------------------------------------------------------------
+    // TEST 15: Rejects missing code on /api/problems/:slug/run with HTTP 400
+    // -------------------------------------------------------------------------
+    const noCodeProblemRes = await fetch('http://localhost:3000/api/problems/two-sum/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        code: '   ',
+        language: 'javascript',
+      }),
+    });
+    assert(noCodeProblemRes.status === 400, 'Rejects empty code on problem run with HTTP 400');
+
+    // -------------------------------------------------------------------------
+    // TEST 16: Non-existent problem on /api/problems/:slug/run returns HTTP 404
+    // -------------------------------------------------------------------------
+    const notFoundProblemRes = await fetch('http://localhost:3000/api/problems/non-existent-problem/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        code: 'function test() {}',
+        language: 'javascript',
+      }),
+    });
+    assert(notFoundProblemRes.status === 404, 'Non-existent problem returns HTTP 404');
+
   } catch (err) {
     console.error('Test execution encountered fatal error:', err);
     failed++;

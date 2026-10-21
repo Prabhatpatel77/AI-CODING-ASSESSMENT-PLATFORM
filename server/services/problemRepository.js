@@ -641,6 +641,41 @@ export async function findProblemByIdOrSlug(idOrSlug, { isFacultyOrAdmin = false
 }
 
 /**
+ * Find a problem for isolated backend test evaluation.
+ * Returns problem with full testCases collection (both visible and hidden)
+ * strictly for server-side sandbox execution.
+ * CRITICAL: NEVER return this object directly to client HTTP responses!
+ *
+ * @param {string} idOrSlug
+ * @returns {Promise<Object|null>}
+ */
+export async function findProblemForEvaluation(idOrSlug) {
+  if (!idOrSlug) return null;
+
+  if (mongoose.connection.readyState === 1) {
+    const isObjectId = mongoose.Types.ObjectId.isValid(idOrSlug);
+    const query = isObjectId ? { $or: [{ _id: idOrSlug }, { slug: idOrSlug }] } : { slug: idOrSlug };
+    const doc = await Problem.findOne(query).exec();
+    if (!doc || doc.status !== 'published') return null;
+    return doc.toObject();
+  }
+
+  seedInitialProblems();
+  let found = memoryProblems.get(idOrSlug);
+  if (!found) {
+    for (const p of memoryProblems.values()) {
+      if (p.id === idOrSlug || p.slug === idOrSlug) {
+        found = p;
+        break;
+      }
+    }
+  }
+
+  if (!found || found.status !== 'published') return null;
+  return found;
+}
+
+/**
  * Create a new problem (Faculty or Admin only)
  */
 export async function createProblem(data, authorId = 'faculty') {
