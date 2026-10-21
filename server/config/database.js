@@ -74,14 +74,17 @@ export async function connectDatabase({ exitOnFailure = false } = {}) {
 
   try {
     await mongoose.connect(uri, {
-      serverSelectionTimeoutMS: 5000, // Timeout fast after 5 seconds instead of hanging
-      connectTimeoutMS: 10000,
+      serverSelectionTimeoutMS: 3000, // Timeout fast after 3 seconds instead of hanging
+      connectTimeoutMS: 8000,
       autoIndex: process.env.NODE_ENV !== 'production', // Build indexes in dev only
     });
     lastConnectionError = null;
     return true;
   } catch (err) {
-    const safeError = sanitizeConnectionString(err.message || String(err));
+    let safeError = sanitizeConnectionString(err.message || String(err));
+    if (safeError.includes('whitelist') || safeError.includes('whitelisted')) {
+      safeError = 'MongoDB Atlas IP not whitelisted: Please add 0.0.0.0/0 to your Atlas cluster Network Access list (https://www.mongodb.com/docs/atlas/security-whitelist/)';
+    }
     lastConnectionError = safeError;
     console.error(`[Database] Failed to connect to MongoDB: ${safeError}`);
 

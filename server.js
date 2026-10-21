@@ -21,9 +21,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Initialize database connectivity (non-blocking in development/prototype mode)
-await connectDatabase({ exitOnFailure: false });
-
 // Body parsing middleware
 app.use(express.json());
 
@@ -72,6 +69,10 @@ if (process.env.NODE_ENV === 'production') {
 
 const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`[Server] Backend running at http://0.0.0.0:${PORT}`);
+  // Initialize database connectivity asynchronously in the background without blocking server startup
+  connectDatabase({ exitOnFailure: false }).catch((err) => {
+    console.error('[Database] Background connection error:', err.message);
+  });
 });
 
 // Graceful shutdown listeners
