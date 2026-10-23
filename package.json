@@ -10,9 +10,11 @@
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "vite build",
-    "test": "node server/tests/auth.test.js && node server/tests/problems.test.js && node server/tests/execution.test.js",
+    "test": "node server/tests/auth.test.js && node server/tests/problems.test.js && node server/tests/execution.test.js && node --test --test-force-exit server/tests/submissions.test.js && node --test --test-force-exit server/tests/gemini.test.js",
     "test:problems": "node server/tests/problems.test.js",
-    "test:execution": "node server/tests/execution.test.js"
+    "test:execution": "node server/tests/execution.test.js",
+    "test:submissions": "node --test --test-force-exit server/tests/submissions.test.js",
+    "test:gemini": "node --test --test-force-exit server/tests/gemini.test.js"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",

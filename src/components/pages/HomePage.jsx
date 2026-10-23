@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { Box, Typography, Card, CardContent, Button, Stack, Grid } from '@mui/material';
 import { Link } from 'react-router-dom';
 import {
@@ -17,14 +17,6 @@ import StatusBadge from '../ui/StatusBadge.jsx';
 
 export default function HomePage() {
   const { tokens } = useAppTheme();
-  const [health, setHealth] = useState(null);
-
-  useEffect(() => {
-    fetch('/api/health')
-      .then((res) => res.json())
-      .then((data) => setHealth(data))
-      .catch(() => {});
-  }, []);
 
   const studentModules = [
     {
@@ -74,11 +66,6 @@ export default function HomePage() {
             <Terminal size={18} />
           </Box>
           <StatusBadge variant="success" size="small" label="Application Shell Active" />
-          {health && (
-            <span style={{ fontSize: '0.75rem', color: tokens.text.secondary, fontFamily: 'monospace' }}>
-              · Uptime: {Math.round(health.uptime)}s
-            </span>
-          )}
         </Box>
 
         <Typography variant="h2" fontWeight={700} sx={{ letterSpacing: '-0.025em', mb: 1 }}>

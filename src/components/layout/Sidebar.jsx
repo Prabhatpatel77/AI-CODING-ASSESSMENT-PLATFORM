@@ -7,6 +7,7 @@ import {
   Award,
   TrendingUp,
   Sparkles,
+  History,
   BookOpen,
   ClipboardList,
   Users,
@@ -31,6 +32,7 @@ export default function Sidebar({
   const studentLinks = [
     { label: 'Home', path: '/', icon: <Home size={18} /> },
     { label: 'Practice', path: '/practice', icon: <Code size={18} /> },
+    { label: 'Submissions', path: '/submissions', icon: <History size={18} /> },
     { label: 'Assessments', path: '/assessments', icon: <Award size={18} /> },
     { label: 'Progress', path: '/progress', icon: <TrendingUp size={18} /> },
     { label: 'AI Coach', path: '/ai-coach', icon: <Sparkles size={18} /> },

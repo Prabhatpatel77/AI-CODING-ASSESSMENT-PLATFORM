@@ -21,7 +21,7 @@ import {
   DialogContent,
   DialogActions,
 } from '@mui/material';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
 import Editor from '@monaco-editor/react';
 import {
   ArrowLeft,
@@ -44,6 +44,8 @@ import AICoachPanel from '../workspace/AICoachPanel.jsx';
 
 export default function CodingWorkspacePage() {
   const { slug } = useParams();
+  const [searchParams] = useSearchParams();
+  const loadSubmissionId = searchParams.get('loadSubmission');
   const { tokens, mode } = useAppTheme();
   const { authFetch } = useAuth();
   const navigate = useNavigate();
@@ -86,10 +88,15 @@ export default function CodingWorkspacePage() {
 
   // Results panel state
   const [resultsOpen, setResultsOpen] = useState(false);
-  const [resultsTab, setResultsTab] = useState(0); // 0: Console, 1: Tests, 2: Submission
+  const [resultsTab, setResultsTab] = useState(0); // 0: Console, 1: Tests, 2: Submission, 3: History
   const [lastAction, setLastAction] = useState(null); // 'run' | 'submit' | null
   const [executionResult, setExecutionResult] = useState(null);
   const [isExecuting, setIsExecuting] = useState(false);
+
+  // Custom input & Submissions state
+  const [customInput, setCustomInput] = useState('');
+  const [useCustomInput, setUseCustomInput] = useState(false);
+  const [submissions, setSubmissions] = useState([]);
 
   // Desktop resizable divider state
   const [leftWidthPercent, setLeftWidthPercent] = useState(45);
@@ -108,6 +115,24 @@ export default function CodingWorkspacePage() {
     (lang) => `devassess_draft_${slug}_${lang}`,
     [slug]
   );
+
+  // Fetch past candidate submissions for this problem
+  const fetchSubmissions = useCallback(async () => {
+    if (!slug) return;
+    try {
+      const res = await authFetch(`/api/problems/${slug}/submissions`);
+      if (res.ok) {
+        const data = await res.json();
+        setSubmissions(data.submissions || []);
+      }
+    } catch {
+      // Ignore background submission history failure
+    }
+  }, [slug, authFetch]);
+
+  useEffect(() => {
+    fetchSubmissions();
+  }, [fetchSubmissions]);
 
   // Fetch problem details from real API
   useEffect(() => {
@@ -128,6 +153,26 @@ export default function CodingWorkspacePage() {
         const supported = data.problem.supportedLanguages || ['javascript', 'python'];
         const initialLang = supported.includes('javascript') ? 'javascript' : supported[0];
         setSelectedLanguage(initialLang);
+
+        // Check if loading a specific past submission directly via query parameter
+        if (loadSubmissionId) {
+          try {
+            const subRes = await authFetch(`/api/submissions/${loadSubmissionId}`);
+            if (subRes.ok) {
+              const subData = await subRes.json();
+              if (subData.submission?.code) {
+                setCode(subData.submission.code);
+                if (subData.submission.language) {
+                  setSelectedLanguage(subData.submission.language);
+                }
+                setIsDirty(true);
+                setResultsOpen(true);
+                setResultsTab(3);
+                return;
+              }
+            }
+          } catch {}
+        }
 
         // Load preserved draft or starter code
         const draftKey = `devassess_draft_${slug}_${initialLang}`;
@@ -192,23 +237,44 @@ export default function CodingWorkspacePage() {
     setResetDialogOpen(false);
   };
 
-  // Handle Run action (executes against visible test cases via isolated sandbox)
+  // Handle Run action (executes against visible test cases or custom test input via isolated sandbox)
   const handleRunTests = async () => {
+    if (isExecuting) return; // Prevent duplicate concurrent executions
+
     setLastAction('run');
     setResultsTab(0); // Console / visible tests output tab
     setResultsOpen(true);
     setIsExecuting(true);
+    setExecutionResult({
+      status: 'RUNNING',
+      language: selectedLanguage,
+      durationMs: 0,
+      stdout: '',
+      stderr: '',
+    });
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 20000);
 
     try {
       const endpoint = problem ? `/api/problems/${problem.slug}/run` : '/api/execution/run';
+      const bodyPayload = {
+        code,
+        language: selectedLanguage,
+      };
+
+      if (useCustomInput && customInput.trim()) {
+        bodyPayload.customStdin = customInput;
+      }
+
       const res = await authFetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          code,
-          language: selectedLanguage,
-        }),
+        body: JSON.stringify(bodyPayload),
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
+
       const data = await res.json();
       if (res.ok) {
         setExecutionResult(data.execution);
@@ -221,10 +287,16 @@ export default function CodingWorkspacePage() {
         });
       }
     } catch (err) {
+      clearTimeout(timeoutId);
+      const isTimeout = err.name === 'AbortError';
       setExecutionResult({
-        status: 'INTERNAL_ERROR',
-        error: { message: err.message },
-        provider: 'unknown',
+        status: isTimeout ? 'TIME_LIMIT_EXCEEDED' : 'INTERNAL_ERROR',
+        error: {
+          message: isTimeout
+            ? 'Execution timed out waiting for remote sandbox response (20s limit).'
+            : `Network failure connecting to execution service: ${err.message}. Please check your connection and retry.`,
+        },
+        provider: 'network',
         durationMs: 0,
       });
     } finally {
@@ -232,12 +304,24 @@ export default function CodingWorkspacePage() {
     }
   };
 
-  // Handle Submit action (evaluates against complete test suite via isolated sandbox)
+  // Handle Submit action (evaluates against complete test suite and records formal submission)
   const handleDoneSubmit = async () => {
+    if (isExecuting) return; // Prevent duplicate accidental submissions
+
     setLastAction('submit');
     setResultsTab(2); // Submission evaluation tab
     setResultsOpen(true);
     setIsExecuting(true);
+    setExecutionResult({
+      status: 'RUNNING',
+      language: selectedLanguage,
+      durationMs: 0,
+      stdout: '',
+      stderr: '',
+    });
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 25000);
 
     try {
       const endpoint = problem ? `/api/problems/${problem.slug}/submit` : '/api/execution/run';
@@ -248,10 +332,14 @@ export default function CodingWorkspacePage() {
           code,
           language: selectedLanguage,
         }),
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
+
       const data = await res.json();
       if (res.ok) {
-        setExecutionResult(data.evaluation || data.execution);
+        setExecutionResult(data.evaluation || data.submission || data.execution);
+        fetchSubmissions(); // Update historical submissions tab immediately
       } else {
         setExecutionResult({
           status: 'INTERNAL_ERROR',
@@ -261,10 +349,16 @@ export default function CodingWorkspacePage() {
         });
       }
     } catch (err) {
+      clearTimeout(timeoutId);
+      const isTimeout = err.name === 'AbortError';
       setExecutionResult({
-        status: 'INTERNAL_ERROR',
-        error: { message: err.message },
-        provider: 'unknown',
+        status: isTimeout ? 'TIME_LIMIT_EXCEEDED' : 'INTERNAL_ERROR',
+        error: {
+          message: isTimeout
+            ? 'Submission evaluation timed out after 25 seconds.'
+            : `Network failure submitting code: ${err.message}. Please check your connection and retry.`,
+        },
+        provider: 'network',
         durationMs: 0,
       });
     } finally {
@@ -719,18 +813,20 @@ export default function CodingWorkspacePage() {
                   variant="outlined"
                   size="small"
                   onClick={handleRunTests}
-                  startIcon={<Play size={14} />}
+                  disabled={isExecuting}
+                  startIcon={isExecuting && lastAction === 'run' ? <CircularProgress size={14} sx={{ color: tokens.primary.main }} /> : <Play size={14} />}
                 >
-                  Run Tests
+                  {isExecuting && lastAction === 'run' ? 'Running Tests...' : 'Run Tests'}
                 </Button>
 
                 <Button
                   variant="contained"
                   size="small"
                   onClick={handleDoneSubmit}
-                  startIcon={<Send size={14} />}
+                  disabled={isExecuting}
+                  startIcon={isExecuting && lastAction === 'submit' ? <CircularProgress size={14} sx={{ color: '#fff' }} /> : <Send size={14} />}
                 >
-                  Submit Solution
+                  {isExecuting && lastAction === 'submit' ? 'Submitting...' : 'Submit Solution'}
                 </Button>
               </Box>
             </Box>
@@ -745,6 +841,20 @@ export default function CodingWorkspacePage() {
               code={code}
               selectedLanguage={selectedLanguage}
               lastAction={lastAction}
+              executionResult={executionResult}
+              isExecuting={isExecuting}
+              customInput={customInput}
+              onCustomInputChange={setCustomInput}
+              useCustomInput={useCustomInput}
+              onToggleCustomInput={setUseCustomInput}
+              submissions={submissions}
+              onSelectSubmission={(sub) => {
+                if (sub.code) {
+                  setCode(sub.code);
+                  if (sub.language) setSelectedLanguage(sub.language);
+                }
+              }}
+              onRetry={lastAction === 'submit' ? handleDoneSubmit : handleRunTests}
             />
           </Card>
         )}

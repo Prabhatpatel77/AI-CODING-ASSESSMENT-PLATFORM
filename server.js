@@ -12,6 +12,8 @@ import healthRouter from './server/routes/health.js';
 import authRouter from './server/routes/auth.js';
 import problemsRouter from './server/routes/problems.js';
 import executionRouter from './server/routes/execution.js';
+import submissionsRouter from './server/routes/submissions.js';
+import aiRouter from './server/routes/ai.js';
 import { notFoundHandler, globalErrorHandler } from './server/middleware/errorHandler.js';
 import { connectDatabase, disconnectDatabase } from './server/config/database.js';
 
@@ -43,6 +45,12 @@ app.use('/api/problems', problemsRouter);
 // Code execution sandbox endpoints
 app.use('/api/execution', executionRouter);
 
+// Persistent submission history & comparison endpoints
+app.use('/api/submissions', submissionsRouter);
+
+// Server-side Gemini AI service endpoints
+app.use('/api/ai', aiRouter);
+
 // Health-check endpoint
 app.use('/api/health', healthRouter);
 
@@ -71,7 +79,7 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`[Server] Backend running at http://0.0.0.0:${PORT}`);
   // Initialize database connectivity asynchronously in the background without blocking server startup
   connectDatabase({ exitOnFailure: false }).catch((err) => {
-    console.error('[Database] Background connection error:', err.message);
+    console.log('[Database] Background connection notice:', err.message);
   });
 });
 

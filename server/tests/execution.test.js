@@ -418,6 +418,298 @@ async function runTests() {
     });
     assert(notFoundProblemRes.status === 404, 'Non-existent problem returns HTTP 404');
 
+    // -------------------------------------------------------------------------
+    // TEST 17: Custom test input execution via POST /api/problems/:slug/run
+    // -------------------------------------------------------------------------
+    const customInputRes = await fetch('http://localhost:3000/api/problems/two-sum/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        code: 'function twoSum(nums, target) { return [0, 1]; }',
+        language: 'javascript',
+        customStdin: JSON.stringify({ nums: [11, 15, 2, 7], target: 9 }),
+      }),
+    });
+    const customInputData = await customInputRes.json();
+    assert(customInputRes.status === 200, 'Custom input run returns HTTP 200');
+    assert(customInputData.execution?.isCustomInput === true, 'Execution recognizes custom input');
+
+    // -------------------------------------------------------------------------
+    // TEST 18: Duplicate submission prevention guard
+    // -------------------------------------------------------------------------
+    const uniqueCode = `function twoSum(nums, target) { return [0, 1]; /* ${Date.now()} */ }`;
+    const firstSubmit = await fetch('http://localhost:3000/api/problems/two-sum/submit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        code: uniqueCode,
+        language: 'javascript',
+      }),
+    });
+    const firstSubmitData = await firstSubmit.json();
+    assert(firstSubmit.status === 200, 'First submission returns HTTP 200');
+    assert(Boolean(firstSubmitData.submission?.id), 'First submission assigned a submission ID');
+
+    // Immediate duplicate submission of identical code within 5 seconds
+    const duplicateSubmit = await fetch('http://localhost:3000/api/problems/two-sum/submit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        code: uniqueCode,
+        language: 'javascript',
+      }),
+    });
+    const duplicateSubmitData = await duplicateSubmit.json();
+    assert(duplicateSubmit.status === 200, 'Duplicate submission returns HTTP 200');
+    assert(duplicateSubmitData.isDuplicate === true, 'Duplicate guard flags duplicate submission');
+    assert(
+      duplicateSubmitData.submission?.id === firstSubmitData.submission?.id,
+      'Duplicate submission returns existing recorded submission'
+    );
+
+    // -------------------------------------------------------------------------
+    // TEST 19: Submission history endpoint GET /api/problems/:slug/submissions
+    // -------------------------------------------------------------------------
+    const historyRes = await fetch('http://localhost:3000/api/problems/two-sum/submissions');
+    const historyData = await historyRes.json();
+    assert(historyRes.status === 200, 'GET /api/problems/:slug/submissions returns HTTP 200');
+    assert(Array.isArray(historyData.submissions), 'Returns submissions array');
+    assert(historyData.submissions.length > 0, 'History contains recorded submission');
+    assert(
+      historyData.submissions.some((s) => s.id === firstSubmitData.submission?.id),
+      'History includes newly recorded submission record'
+    );
+
+    // -------------------------------------------------------------------------
+    // TEST 20: Mock Judge Workflow: Successful execution returns ACCEPTED verdict
+    // -------------------------------------------------------------------------
+    const { executeProblemTestSuite } = await import('../services/execution/problemRunner.js');
+    class MockAcceptedJudge extends ExecutionAdapter {
+      constructor() {
+        super('mock-accepted-judge');
+      }
+      async execute({ executionId, language, expectedOutput, resourceLimits }) {
+        return {
+          executionId,
+          status: EXECUTION_STATUS.SUCCESS,
+          statusCode: 3,
+          language,
+          stdout: expectedOutput || '[0, 1]', // Matches expectedOutput for twoSum test cases
+          stderr: '',
+          compileOutput: null,
+          exitCode: 0,
+          exitSignal: null,
+          durationMs: 32,
+          memoryUsedKb: 14200,
+          resourceLimits,
+          provider: 'mock-accepted-judge',
+          executedAt: new Date().toISOString(),
+          error: null,
+        };
+      }
+      getStatus() {
+        return { provider: 'mock-accepted-judge', configured: true, ready: true };
+      }
+    }
+
+    resetExecutionProvider(new MockAcceptedJudge());
+    const acceptedEval = await executeProblemTestSuite({
+      problemSlug: 'two-sum',
+      code: 'function twoSum(nums, target) { return [0, 1]; }',
+      language: 'javascript',
+      isSubmit: true,
+    });
+
+    assert(acceptedEval.status === 'ACCEPTED', 'All passing tests evaluates to ACCEPTED verdict');
+    assert(acceptedEval.allPassed === true, 'Flagged as allPassed: true');
+    assert(acceptedEval.passedTests === acceptedEval.totalTests, 'All test fixtures marked passed');
+
+    // -------------------------------------------------------------------------
+    // TEST 21: Mock Judge Workflow: Failed assertion returns WRONG_ANSWER verdict
+    // -------------------------------------------------------------------------
+    class MockWrongAnswerJudge extends ExecutionAdapter {
+      constructor() {
+        super('mock-wa-judge');
+      }
+      async execute({ executionId, language, resourceLimits }) {
+        return {
+          executionId,
+          status: EXECUTION_STATUS.SUCCESS,
+          statusCode: 3,
+          language,
+          stdout: '[999, 888]', // Wrong output
+          stderr: '',
+          compileOutput: null,
+          exitCode: 0,
+          durationMs: 28,
+          resourceLimits,
+          provider: 'mock-wa-judge',
+          executedAt: new Date().toISOString(),
+        };
+      }
+      getStatus() {
+        return { provider: 'mock-wa-judge', configured: true, ready: true };
+      }
+    }
+
+    resetExecutionProvider(new MockWrongAnswerJudge());
+    const waEval = await executeProblemTestSuite({
+      problemSlug: 'two-sum',
+      code: 'function twoSum() { return [999, 888]; }',
+      language: 'javascript',
+      isSubmit: true,
+    });
+
+    assert(waEval.status === 'WRONG_ANSWER', 'Mismatched output evaluates to WRONG_ANSWER verdict');
+    assert(waEval.allPassed === false, 'allPassed is false on output mismatch');
+
+    // -------------------------------------------------------------------------
+    // TEST 22: Mock Judge Workflow: Compilation Error verdict
+    // -------------------------------------------------------------------------
+    class MockCompileErrJudge extends ExecutionAdapter {
+      constructor() {
+        super('mock-ce-judge');
+      }
+      async execute({ executionId, language, resourceLimits }) {
+        return {
+          executionId,
+          status: EXECUTION_STATUS.COMPILATION_ERROR,
+          statusCode: 6,
+          language,
+          stdout: '',
+          stderr: 'SyntaxError: Unexpected token',
+          compileOutput: 'SyntaxError: Unexpected token',
+          exitCode: 1,
+          durationMs: 15,
+          resourceLimits,
+          provider: 'mock-ce-judge',
+          executedAt: new Date().toISOString(),
+        };
+      }
+      getStatus() {
+        return { provider: 'mock-ce-judge', configured: true, ready: true };
+      }
+    }
+
+    resetExecutionProvider(new MockCompileErrJudge());
+    const ceEval = await executeProblemTestSuite({
+      problemSlug: 'two-sum',
+      code: 'invalid syntax {{{',
+      language: 'javascript',
+      isSubmit: true,
+    });
+    assert(ceEval.status === 'COMPILATION_ERROR', 'Syntax/compiler failure returns COMPILATION_ERROR verdict');
+
+    // -------------------------------------------------------------------------
+    // TEST 23: Mock Judge Workflow: Runtime Error verdict
+    // -------------------------------------------------------------------------
+    class MockRuntimeErrJudge extends ExecutionAdapter {
+      constructor() {
+        super('mock-re-judge');
+      }
+      async execute({ executionId, language, resourceLimits }) {
+        return {
+          executionId,
+          status: EXECUTION_STATUS.RUNTIME_ERROR,
+          statusCode: 11,
+          language,
+          stdout: '',
+          stderr: 'TypeError: Cannot read properties of undefined',
+          exitCode: 1,
+          durationMs: 20,
+          resourceLimits,
+          provider: 'mock-re-judge',
+          executedAt: new Date().toISOString(),
+        };
+      }
+      getStatus() {
+        return { provider: 'mock-re-judge', configured: true, ready: true };
+      }
+    }
+
+    resetExecutionProvider(new MockRuntimeErrJudge());
+    const reEval = await executeProblemTestSuite({
+      problemSlug: 'two-sum',
+      code: 'function twoSum() { throw new Error("fatal"); }',
+      language: 'javascript',
+      isSubmit: true,
+    });
+    assert(reEval.status === 'RUNTIME_ERROR', 'Runtime exception returns RUNTIME_ERROR verdict');
+
+    // -------------------------------------------------------------------------
+    // TEST 24: Mock Judge Workflow: Time Limit Exceeded verdict
+    // -------------------------------------------------------------------------
+    class MockTleJudge extends ExecutionAdapter {
+      constructor() {
+        super('mock-tle-judge');
+      }
+      async execute({ executionId, language, resourceLimits }) {
+        return {
+          executionId,
+          status: EXECUTION_STATUS.TIME_LIMIT_EXCEEDED,
+          statusCode: 5,
+          language,
+          stdout: '',
+          stderr: 'Time limit exceeded',
+          durationMs: 5001,
+          resourceLimits,
+          provider: 'mock-tle-judge',
+          executedAt: new Date().toISOString(),
+        };
+      }
+      getStatus() {
+        return { provider: 'mock-tle-judge', configured: true, ready: true };
+      }
+    }
+
+    resetExecutionProvider(new MockTleJudge());
+    const tleEval = await executeProblemTestSuite({
+      problemSlug: 'two-sum',
+      code: 'while (true) {}',
+      language: 'javascript',
+      isSubmit: true,
+    });
+    assert(tleEval.status === 'TIME_LIMIT_EXCEEDED', 'Infinite loop returns TIME_LIMIT_EXCEEDED verdict');
+
+    // -------------------------------------------------------------------------
+    // TEST 25: Mock Judge Workflow: Internal Judge Error verdict
+    // -------------------------------------------------------------------------
+    class MockInternalErrJudge extends ExecutionAdapter {
+      constructor() {
+        super('mock-internal-judge');
+      }
+      async execute({ executionId, language, resourceLimits }) {
+        return {
+          executionId,
+          status: EXECUTION_STATUS.INTERNAL_ERROR,
+          statusCode: 13,
+          language,
+          stdout: '',
+          stderr: 'Internal sandbox error',
+          durationMs: 10,
+          resourceLimits,
+          provider: 'mock-internal-judge',
+          executedAt: new Date().toISOString(),
+          error: { message: 'Docker daemon communication failure' },
+        };
+      }
+      getStatus() {
+        return { provider: 'mock-internal-judge', configured: true, ready: true };
+      }
+    }
+
+    resetExecutionProvider(new MockInternalErrJudge());
+    const internalEval = await executeProblemTestSuite({
+      problemSlug: 'two-sum',
+      code: 'function test() {}',
+      language: 'javascript',
+      isSubmit: true,
+    });
+    assert(internalEval.status === 'INTERNAL_ERROR', 'Judge failure returns INTERNAL_ERROR verdict');
+
+    // Restore unconfigured adapter
+    resetExecutionProvider(null);
+
   } catch (err) {
     console.error('Test execution encountered fatal error:', err);
     failed++;

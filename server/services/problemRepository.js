@@ -840,6 +840,29 @@ export async function deleteProblem(idOrSlug) {
 }
 
 /**
+ * Retrieves list of problem slugs authored by a specific user/faculty.
+ * Used for role-based assignment and submission access control.
+ *
+ * @param {string} authorId
+ * @returns {Promise<Array<string>>}
+ */
+export async function getProblemSlugsByAuthor(authorId) {
+  if (!authorId) return [];
+  if (mongoose.connection.readyState === 1) {
+    const docs = await Problem.find({ author: authorId }).select('slug').lean().exec();
+    return docs.map((d) => d.slug);
+  }
+  seedInitialProblems();
+  const slugs = [];
+  for (const prob of memoryProblems.values()) {
+    if (String(prob.author) === String(authorId)) {
+      slugs.push(prob.slug);
+    }
+  }
+  return slugs;
+}
+
+/**
  * Reset memory store (useful for clean test runs)
  */
 export function resetMemoryProblems() {

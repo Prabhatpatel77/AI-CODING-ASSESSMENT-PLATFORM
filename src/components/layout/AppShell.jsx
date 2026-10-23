@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Drawer } from '@mui/material';
+import { Box, Drawer, Typography } from '@mui/material';
 import { Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { useAppTheme } from '../../theme/ThemeContext.jsx';
@@ -20,25 +20,6 @@ export default function AppShell() {
   // Active user role
   const userRole = user?.role || (isAuthenticated ? 'student' : 'guest');
 
-  // Live health state from /api/health
-  const [apiStatus, setApiStatus] = useState('healthy');
-  const [dbStatus, setDbStatus] = useState('unconfigured');
-  const [uptime, setUptime] = useState(null);
-
-  useEffect(() => {
-    fetch('/api/health')
-      .then((res) => res.json())
-      .then((data) => {
-        setApiStatus(data.status || 'healthy');
-        setDbStatus(data.database?.status || 'unconfigured');
-        setUptime(data.uptime);
-      })
-      .catch(() => {
-        setApiStatus('offline');
-        setDbStatus('error');
-      });
-  }, []);
-
   // Close mobile drawer on route change
   useEffect(() => {
     setMobileOpen(false);
@@ -58,7 +39,6 @@ export default function AppShell() {
       {/* Top Navigation */}
       <TopNav
         onToggleMobileSidebar={() => setMobileOpen(!mobileOpen)}
-        apiStatus={apiStatus}
       />
 
       {/* Main Workspace Frame (Sidebar + Content) */}
@@ -102,7 +82,7 @@ export default function AppShell() {
             height: 'calc(100vh - 56px - 28px)',
           }}
         >
-          <Outlet context={{ user, userRole, apiStatus }} />
+          <Outlet context={{ user, userRole }} />
         </Box>
       </Box>
 
@@ -122,34 +102,20 @@ export default function AppShell() {
           flexShrink: 0,
         }}
       >
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <span
-              style={{
-                width: 6,
-                height: 6,
-                borderRadius: '50%',
-                backgroundColor: apiStatus === 'healthy' ? tokens.status.success.main : tokens.status.error.main,
-              }}
-            />
-            <span style={{ fontFamily: 'monospace' }}>API {apiStatus.toUpperCase()}</span>
-          </Box>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+          <Typography variant="caption" sx={{ color: tokens.text.secondary, fontWeight: 600 }}>
+            AI Coding Assessment Platform
+          </Typography>
           <span style={{ color: tokens.border.strong }}>·</span>
-          <span>DB: <strong style={{ color: dbStatus === 'connected' ? tokens.status.success.main : tokens.text.secondary, textTransform: 'capitalize' }}>{dbStatus}</strong></span>
-          <span style={{ color: tokens.border.strong }}>·</span>
-          <span>Route: <strong style={{ color: tokens.text.primary, fontFamily: 'monospace' }}>{location.pathname}</strong></span>
-          <span style={{ color: tokens.border.strong }}>·</span>
-          <span>Role: <strong style={{ color: tokens.primary.main, textTransform: 'capitalize' }}>{userRole}</strong></span>
+          <Typography variant="caption" sx={{ color: tokens.text.secondary }}>
+            Technical Evaluation Environment
+          </Typography>
         </Box>
 
         <Box sx={{ display: { xs: 'none', sm: 'flex' }, alignItems: 'center', gap: 2 }}>
-          <span>Theme: <strong style={{ color: tokens.text.primary, textTransform: 'capitalize' }}>{mode}</strong></span>
-          {uptime !== null && (
-            <>
-              <span style={{ color: tokens.border.strong }}>·</span>
-              <span style={{ fontFamily: 'monospace' }}>Uptime: {Math.round(uptime)}s</span>
-            </>
-          )}
+          <Typography variant="caption" sx={{ color: tokens.text.secondary }}>
+            Role: <strong style={{ color: tokens.primary.main, textTransform: 'capitalize' }}>{userRole}</strong>
+          </Typography>
         </Box>
       </Box>
     </Box>

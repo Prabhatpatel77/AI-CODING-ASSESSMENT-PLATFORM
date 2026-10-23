@@ -9,6 +9,7 @@ import LoginPage from './components/pages/LoginPage.jsx';
 import RegisterPage from './components/pages/RegisterPage.jsx';
 import PracticePage from './components/pages/PracticePage.jsx';
 import CodingWorkspacePage from './components/pages/CodingWorkspacePage.jsx';
+import SubmissionsHistoryPage from './components/pages/SubmissionsHistoryPage.jsx';
 import ProtectedRoute from './components/auth/ProtectedRoute.jsx';
 
 export default function App() {
@@ -41,6 +42,15 @@ export default function App() {
                 element={
                   <ProtectedRoute>
                     <CodingWorkspacePage />
+                  </ProtectedRoute>
+                }
+              />
+
+              <Route
+                path="submissions"
+                element={
+                  <ProtectedRoute>
+                    <SubmissionsHistoryPage />
                   </ProtectedRoute>
                 }
               />

@@ -168,6 +168,7 @@ export async function executeProblemTestSuite({
   code,
   language = 'javascript',
   isSubmit = false,
+  customStdin,
   resourceLimits = {},
 }) {
   const problem = await findProblemForEvaluation(problemSlug);
@@ -183,6 +184,7 @@ export async function executeProblemTestSuite({
   // If the isolated execution engine is not configured, return honest diagnostic
   if (!providerStatus.configured) {
     const unconfiguredExecId = generateExecutionId();
+    const hasCustomInput = !isSubmit && customStdin !== null && customStdin !== undefined && String(customStdin).trim() !== '';
     return {
       executionId: unconfiguredExecId,
       status: EXECUTION_STATUS.UNCONFIGURED,
@@ -190,7 +192,9 @@ export async function executeProblemTestSuite({
       problemSlug: problem.slug,
       problemTitle: problem.title,
       isSubmit,
-      totalTests: (problem.testCases || []).length,
+      isCustomInput: hasCustomInput,
+      customInput: hasCustomInput ? String(customStdin) : null,
+      totalTests: hasCustomInput ? 1 : (problem.testCases || []).length,
       passedTests: 0,
       testResults: [],
       hiddenTestsPassed: 0,
@@ -210,6 +214,49 @@ export async function executeProblemTestSuite({
           ],
         },
       },
+    };
+  }
+
+  // If custom test input is provided by candidate for Run, execute against customStdin
+  if (!isSubmit && customStdin !== null && customStdin !== undefined && String(customStdin).trim() !== '') {
+    const fnName = extractFunctionName(problem.slug, problem.starterCode?.[language] || '', language);
+    const instrumentedCode = wrapCodeWithHarness(code, language, fnName);
+
+    const execResponse = await provider.execute({
+      executionId: generateExecutionId(),
+      code: instrumentedCode,
+      language,
+      stdin: String(customStdin),
+      resourceLimits,
+    });
+
+    return {
+      executionId: generateExecutionId(),
+      status: execResponse.status,
+      statusCode: execResponse.statusCode,
+      problemSlug: problem.slug,
+      problemTitle: problem.title,
+      isCustomInput: true,
+      customInput: String(customStdin),
+      stdout: execResponse.stdout,
+      stderr: execResponse.stderr,
+      compileOutput: execResponse.compileOutput,
+      durationMs: execResponse.durationMs,
+      memoryUsedKb: execResponse.memoryUsedKb,
+      provider: providerStatus.provider,
+      evaluatedAt: new Date().toISOString(),
+      testResults: [
+        {
+          testCaseNumber: 1,
+          isHidden: false,
+          passed: execResponse.status === EXECUTION_STATUS.SUCCESS,
+          status: execResponse.status,
+          inputStr: String(customStdin),
+          stdout: execResponse.stdout,
+          stderr: execResponse.stderr,
+          durationMs: execResponse.durationMs,
+        },
+      ],
     };
   }
 
@@ -302,9 +349,11 @@ export async function executeProblemTestSuite({
   const hiddenCases = activeCases.filter((tc) => tc.isHidden);
   const hiddenPassed = testResults.filter((r) => r.isHidden && r.passed).length;
 
+  const finalStatus = isSubmit && overallStatus === EXECUTION_STATUS.SUCCESS ? 'ACCEPTED' : overallStatus;
+
   return {
     executionId: generateExecutionId(),
-    status: overallStatus,
+    status: finalStatus,
     statusCode: EXECUTION_STATUS_CODES[overallStatus] || 99,
     problemSlug: problem.slug,
     problemTitle: problem.title,

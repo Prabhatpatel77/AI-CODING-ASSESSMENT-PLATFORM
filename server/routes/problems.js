@@ -14,8 +14,13 @@ import {
 } from '../services/problemRepository.js';
 import { authenticate, requireRole } from '../middleware/auth.js';
 import { verifyToken } from '../services/jwtService.js';
-import { findUserById } from '../services/userRepository.js';
 import { executeProblemTestSuite } from '../services/execution/index.js';
+import {
+  createSubmission,
+  findSubmissionsByProblem,
+  checkDuplicateSubmission,
+} from '../services/submissionRepository.js';
+import { findUserById } from '../services/userRepository.js';
 
 const router = express.Router();
 
@@ -372,13 +377,13 @@ router.delete('/:idOrSlug', authenticate, requireRole('faculty', 'admin'), async
 
 /**
  * POST /api/problems/:idOrSlug/run
- * Runs student code against visible test cases in the isolated execution sandbox.
+ * Runs student code against visible test cases or custom test input in the isolated execution sandbox.
  * Never executes on the local host.
  */
 router.post('/:idOrSlug/run', optionalAuth, async (req, res, next) => {
   try {
     const { idOrSlug } = req.params;
-    const { code, language = 'javascript', resourceLimits } = req.body;
+    const { code, language = 'javascript', customStdin, resourceLimits } = req.body;
 
     if (!code || typeof code !== 'string' || !code.trim()) {
       return res.status(400).json({
@@ -401,6 +406,7 @@ router.post('/:idOrSlug/run', optionalAuth, async (req, res, next) => {
       code,
       language,
       isSubmit: false,
+      customStdin,
       resourceLimits,
     });
 
@@ -422,15 +428,26 @@ router.post('/:idOrSlug/run', optionalAuth, async (req, res, next) => {
 
 /**
  * POST /api/problems/:idOrSlug/submit
- * Evaluates student code against the complete test suite (both visible and hidden).
- * CRITICAL SECURITY INVARIANT:
- * Hidden test case inputs and expected outputs are NEVER returned in the client response.
- * Unexecuted code is NEVER marked as successful.
+ * Evaluates student code against the complete test suite (both visible and hidden)
+ * and records a formal Submission entity.
+ *
+ * Enforces:
+ * - Duplicate accidental submission prevention within 5-second window
+ * - Association with authenticated candidate user
+ * - Hidden test case inputs and expected outputs are NEVER returned in the client response
+ * - Unexecuted code is NEVER marked as successful
  */
 router.post('/:idOrSlug/submit', optionalAuth, async (req, res, next) => {
   try {
     const { idOrSlug } = req.params;
-    const { code, language = 'javascript', resourceLimits } = req.body;
+    const {
+      code,
+      language = 'javascript',
+      resourceLimits,
+      assessmentId,
+      assessmentTitle,
+      facultyId,
+    } = req.body;
 
     if (!code || typeof code !== 'string' || !code.trim()) {
       return res.status(400).json({
@@ -448,6 +465,34 @@ router.post('/:idOrSlug/submit', optionalAuth, async (req, res, next) => {
       });
     }
 
+    const userId = req.user?.id || req.user?._id || 'guest_candidate';
+    const userEmail = req.user?.email || 'candidate@assessment.local';
+    const userName = req.user?.name || 'Candidate';
+
+    // Duplicate submission guard: prevent duplicate accidental double-clicks within 5 seconds
+    const existingSubmission = await checkDuplicateSubmission({
+      userId,
+      problemSlug: idOrSlug,
+      code,
+      language,
+      windowSeconds: 5,
+    });
+
+    if (existingSubmission) {
+      const duplicatePayload = {
+        ...existingSubmission,
+        isSubmit: true,
+      };
+      return res.status(200).json({
+        status: 'success',
+        isDuplicate: true,
+        message: 'Duplicate submission detected within recent window. Returning recorded evaluation.',
+        evaluation: duplicatePayload,
+        submission: duplicatePayload,
+      });
+    }
+
+    // Run full test suite through isolated sandbox
     const evaluation = await executeProblemTestSuite({
       problemSlug: idOrSlug,
       code,
@@ -456,9 +501,46 @@ router.post('/:idOrSlug/submit', optionalAuth, async (req, res, next) => {
       resourceLimits,
     });
 
+    // Resolve author or faculty owner if applicable
+    const problem = await findProblemByIdOrSlug(idOrSlug, { isFacultyOrAdmin: true });
+    const resolvedFacultyId =
+      facultyId || (problem?.author && problem.author !== 'system' ? problem.author : null);
+
+    // Record formal submission record
+    const recordedSubmission = await createSubmission({
+      userId,
+      userEmail,
+      userName,
+      problemId: evaluation.problemSlug || idOrSlug,
+      problemSlug: idOrSlug,
+      problemTitle: evaluation.problemTitle || idOrSlug,
+      assessmentId: assessmentId || null,
+      assessmentTitle: assessmentTitle || null,
+      facultyId: resolvedFacultyId || null,
+      code,
+      language,
+      isSubmit: true,
+      status: evaluation.status,
+      passedTests: evaluation.passedTests || 0,
+      totalTests: evaluation.totalTests || 0,
+      hiddenTestsPassed: evaluation.hiddenTestsPassed || 0,
+      hiddenTestsTotal: evaluation.hiddenTestsTotal || 0,
+      durationMs: evaluation.durationMs || 0,
+      memoryUsedKb: evaluation.peakMemoryKb || null,
+      provider: evaluation.provider || 'unknown',
+      testResults: evaluation.testResults || [],
+      error: evaluation.error || null,
+    });
+
+    const responsePayload = {
+      ...recordedSubmission,
+      isSubmit: true,
+    };
+
     res.status(200).json({
       status: 'success',
-      evaluation,
+      evaluation: responsePayload,
+      submission: responsePayload,
     });
   } catch (err) {
     if (err.statusCode === 404) {
@@ -468,6 +550,30 @@ router.post('/:idOrSlug/submit', optionalAuth, async (req, res, next) => {
         message: err.message,
       });
     }
+    next(err);
+  }
+});
+
+/**
+ * GET /api/problems/:idOrSlug/submissions
+ * Retrieves historical candidate submissions for this problem.
+ */
+router.get('/:idOrSlug/submissions', optionalAuth, async (req, res, next) => {
+  try {
+    const { idOrSlug } = req.params;
+    const isFacultyOrAdmin = Boolean(
+      req.user && (req.user.role === 'faculty' || req.user.role === 'admin')
+    );
+    const filterUserId = isFacultyOrAdmin ? null : (req.user?.id || req.user?._id || null);
+
+    const submissions = await findSubmissionsByProblem(idOrSlug, filterUserId);
+
+    res.status(200).json({
+      status: 'success',
+      count: submissions.length,
+      submissions,
+    });
+  } catch (err) {
     next(err);
   }
 });
