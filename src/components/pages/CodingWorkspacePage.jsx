@@ -667,7 +667,13 @@ export default function CodingWorkspacePage() {
 
               {(isMobile ? mobileTab === 3 : leftTab === 2) && (
                 /* AI Mentor Panel */
-                <AICoachPanel problem={problem} />
+                <AICoachPanel
+                  problem={problem}
+                  code={code}
+                  language={selectedLanguage}
+                  judgeResults={executionResult}
+                  previousAttempts={submissions}
+                />
               )}
             </Box>
           </Card>

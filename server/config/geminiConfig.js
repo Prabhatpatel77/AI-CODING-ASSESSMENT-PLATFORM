@@ -7,12 +7,9 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
-/**
- * Retrieves normalized Gemini configuration from environment variables.
- */
-export function getGeminiConfig() {
-  const apiKey = (process.env.GEMINI_API_KEY || process.env.API_KEY || '').trim();
-  let model = (process.env.GEMINI_MODEL || 'gemini-3.5-flash').trim();
+export function normalizeModelName(rawModel) {
+  const model = (rawModel || '').trim();
+  if (!model) return 'gemini-3.5-flash';
   const deprecatedModels = [
     'gemini-2.5-flash',
     'gemini-2.5-pro',
@@ -23,8 +20,17 @@ export function getGeminiConfig() {
     'gemini-pro',
   ];
   if (deprecatedModels.includes(model)) {
-    model = 'gemini-3.5-flash';
+    return 'gemini-3.5-flash';
   }
+  return model;
+}
+
+/**
+ * Retrieves normalized Gemini configuration from environment variables.
+ */
+export function getGeminiConfig() {
+  const apiKey = (process.env.GEMINI_API_KEY || process.env.API_KEY || '').trim();
+  const model = normalizeModelName(process.env.GEMINI_MODEL);
   const timeoutMs = parseInt(process.env.GEMINI_TIMEOUT_MS, 10) || 30000;
   const maxRetries = parseInt(process.env.GEMINI_MAX_RETRIES, 10) || 3;
   const isConfigured = Boolean(apiKey && apiKey.length > 0);

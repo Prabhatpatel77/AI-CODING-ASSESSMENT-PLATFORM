@@ -305,5 +305,40 @@ test('Server-Side Gemini API Service Test Suite', async () => {
   // Reset client to live default
   resetGeminiClient();
 
+  // ---------------------------------------------------------------------------
+  // TEST 10: Live Provider Integration (when GEMINI_API_KEY is configured)
+  // ---------------------------------------------------------------------------
+  if (config.isConfigured) {
+    try {
+      const liveResult = await generateGeminiContent({
+        prompt: 'Return a JSON with summary "live test passed" and timeComplexity "O(1)" and spaceComplexity "O(1)" and complexityExplanation "constant time operation".',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            summary: { type: Type.STRING },
+            timeComplexity: { type: Type.STRING },
+            spaceComplexity: { type: Type.STRING },
+            complexityExplanation: { type: Type.STRING },
+          },
+          required: ['summary', 'timeComplexity', 'spaceComplexity', 'complexityExplanation'],
+        },
+        timeoutMs: 20000,
+        maxRetries: 1,
+      });
+      assert.strictEqual(liveResult.success, true, 'Live Gemini API call succeeded');
+      assert(Boolean(liveResult.data?.summary), 'Live model produced valid structured output');
+      assert(liveResult.latencyMs > 0, 'Live latency recorded');
+      console.log(`✓ Test 10: Live Gemini API call succeeded in ${liveResult.latencyMs}ms using model ${liveResult.model}`);
+    } catch (liveErr) {
+      if (liveErr.code === GEMINI_ERROR_CODES.QUOTA_EXHAUSTED || liveErr.code === GEMINI_ERROR_CODES.SERVICE_UNAVAILABLE) {
+        console.log(`✓ Test 10: Live Gemini API handled upstream capacity limit: ${liveErr.code} (${liveErr.message})`);
+      } else {
+        throw liveErr;
+      }
+    }
+  } else {
+    console.log('ℹ Test 10: Live Gemini call skipped (GEMINI_API_KEY not configured)');
+  }
+
   console.log('PASS: All Gemini service, error handling, retry, and explanation tests passed successfully!');
 });

@@ -12,7 +12,7 @@
  */
 
 import { GoogleGenAI, Type } from '@google/genai';
-import { getGeminiConfig, sanitizeSecrets } from '../../config/geminiConfig.js';
+import { getGeminiConfig, sanitizeSecrets, normalizeModelName } from '../../config/geminiConfig.js';
 
 export { Type };
 
@@ -237,7 +237,7 @@ export async function generateGeminiContent({
     );
   }
 
-  const selectedModel = model || config.model;
+  const selectedModel = normalizeModelName(model || config.model);
   const effectiveTimeoutMs = timeoutMs || config.timeoutMs;
   const effectiveMaxRetries = maxRetries !== undefined ? maxRetries : config.maxRetries;
 

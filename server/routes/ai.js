@@ -16,6 +16,7 @@ import {
   GeminiServiceError,
   Type,
 } from '../services/ai/geminiService.js';
+import { generateAdaptiveHint, HINT_STAGES } from '../services/ai/hintAgent.js';
 import { getGeminiConfig, sanitizeSecrets } from '../config/geminiConfig.js';
 
 const router = express.Router();
@@ -33,7 +34,7 @@ router.get('/status', (req, res) => {
     model: config.model,
     timeoutMs: config.timeoutMs,
     maxRetries: config.maxRetries,
-    capabilities: ['structured_json', 'retries', 'latency_tracking', 'token_accounting'],
+    capabilities: ['structured_json', 'retries', 'latency_tracking', 'token_accounting', 'adaptive_hints'],
   });
 });
 
@@ -141,6 +142,83 @@ router.post('/explain', authenticate, async (req, res, next) => {
         status: 'error',
         statusCode: err.statusCode,
         code: err.code,
+        message: err.message,
+      });
+    }
+    next(err);
+  }
+});
+
+/**
+ * POST /api/ai/hint
+ * Authenticated endpoint for progressive, adaptive Socratic hints.
+ *
+ * Inputs:
+ * - problem: { title, description, constraints }
+ * - code: student's current code (required)
+ * - language: 'javascript' | 'python'
+ * - judgeResults: optional real test execution verdict and logs
+ * - previousAttempts: attempt count or array of previous attempts
+ * - previousHints: array of prior hints already delivered
+ * - hintLevel: 1 (Conceptual Clue) | 2 (Algorithmic Direction) | 3 (Specific Guidance)
+ */
+router.post('/hint', authenticate, async (req, res, next) => {
+  try {
+    const {
+      problem,
+      code,
+      language = 'javascript',
+      judgeResults,
+      previousAttempts = [],
+      previousHints = [],
+      hintLevel = 1,
+    } = req.body;
+
+    // Validate required student code
+    if (!code || typeof code !== 'string' || !code.trim()) {
+      return res.status(400).json({
+        status: 'error',
+        statusCode: 400,
+        message: 'Student source code is required to generate a hint.',
+      });
+    }
+
+    if (Buffer.byteLength(code, 'utf8') > 65536) {
+      return res.status(400).json({
+        status: 'error',
+        statusCode: 400,
+        message: 'Source code exceeds maximum permitted size of 64 KB.',
+      });
+    }
+
+    const result = await generateAdaptiveHint({
+      problem: problem || {},
+      code,
+      language,
+      judgeResults,
+      previousAttempts,
+      previousHints,
+      hintLevel,
+      userContext: { candidateRole: req.user?.role || 'student' },
+    });
+
+    res.status(200).json({
+      status: 'success',
+      data: result,
+    });
+  } catch (err) {
+    if (err instanceof GeminiServiceError) {
+      return res.status(err.statusCode).json({
+        status: 'error',
+        statusCode: err.statusCode,
+        code: err.code,
+        message: err.message,
+      });
+    }
+    if (err.message && err.message.includes('required')) {
+      return res.status(400).json({
+        status: 'error',
+        statusCode: 400,
         message: err.message,
       });
     }
