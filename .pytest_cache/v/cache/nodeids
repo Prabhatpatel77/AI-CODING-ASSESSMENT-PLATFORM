@@ -1,0 +1,10 @@
+[
+  "ai_orchestrator/tests/test_service.py::test_health_endpoint",
+  "ai_orchestrator/tests/test_service.py::test_orchestrate_nonexistent_workflow",
+  "ai_orchestrator/tests/test_service.py::test_orchestrate_valid_workflow",
+  "ai_orchestrator/tests/test_service.py::test_orchestrate_validation_error",
+  "ai_orchestrator/tests/test_service.py::test_protected_endpoint_accepts_valid_key",
+  "ai_orchestrator/tests/test_service.py::test_protected_endpoint_rejects_invalid_key",
+  "ai_orchestrator/tests/test_service.py::test_protected_endpoint_rejects_missing_key",
+  "ai_orchestrator/tests/test_service.py::test_root_endpoint"
+]

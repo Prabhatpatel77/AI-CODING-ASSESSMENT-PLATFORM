@@ -34,7 +34,7 @@ router.get('/status', (req, res) => {
     model: config.model,
     timeoutMs: config.timeoutMs,
     maxRetries: config.maxRetries,
-    capabilities: ['structured_json', 'retries', 'latency_tracking', 'token_accounting', 'adaptive_hints'],
+    capabilities: ['structured_json', 'retries', 'latency_tracking', 'token_accounting', 'adaptive_hints', 'code_review'],
   });
 });
 
